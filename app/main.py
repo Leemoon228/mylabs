@@ -3,6 +3,7 @@ import time
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from app.models import (
     Error,
@@ -13,6 +14,13 @@ from app.models import (
     NodeUpdate,
 )
 
+from app.metrics import (
+    http_request_duration_seconds,
+    http_requests_total,
+    node_status_checks_total,
+    nodes_created_total,
+    nodes_deleted_total,
+)
 
 app = FastAPI(
     title="Server Monitoring API",
@@ -44,6 +52,7 @@ def create_node(node_data: NodeCreate):
     )
 
     nodes[node.id] = node
+    nodes_created_total.inc()
     next_node_id += 1
 
     return node
@@ -90,6 +99,7 @@ def delete_node(node_id: int):
         )
 
     del nodes[node_id]
+    nodes_deleted_total.inc()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -105,6 +115,7 @@ def get_node_status(node_id: int):
         )
 
     started_at = time.perf_counter()
+    node_status_checks_total.inc()
 
     try:
         with socket.create_connection(
@@ -127,6 +138,12 @@ def get_node_status(node_id: int):
         response_time_ms=response_time_ms,
     )
 
+@app.get("/metrics")
+def metrics():
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 @app.get("/health", response_model=HealthResponse)
 def health():
@@ -150,3 +167,27 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "message": str(exc.detail),
         },
     )
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    started_at = time.perf_counter()
+
+    response = await call_next(request)
+
+    duration = time.perf_counter() - started_at
+
+    route = request.scope.get("route")
+    path = route.path if route else request.url.path
+
+    http_requests_total.labels(
+        method=request.method,
+        path=path,
+        status=response.status_code,
+    ).inc()
+
+    http_request_duration_seconds.labels(
+        method=request.method,
+        path=path,
+    ).observe(duration)
+
+    return response
