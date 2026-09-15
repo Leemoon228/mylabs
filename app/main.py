@@ -1,5 +1,9 @@
+import json
+import logging
 import socket
+import sys
 import time
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -22,6 +26,47 @@ from app.metrics import (
     nodes_deleted_total,
 )
 
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        log_data = {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "service": "server-monitoring-api",
+            "message": record.getMessage(),
+        }
+
+        for key in (
+            "method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "node_id",
+            "name",
+            "host",
+            "port",
+        ):
+            value = getattr(record, key, None)
+            if value is not None:
+                log_data[key] = value
+
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_data, ensure_ascii=False)
+
+
+logger = logging.getLogger("server-monitoring-api")
+logger.setLevel(logging.INFO)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(JsonFormatter())
+
+logger.handlers.clear()
+logger.addHandler(handler)
+logger.propagate = False
+
+
 app = FastAPI(
     title="Server Monitoring API",
     description="API сервиса мониторинга серверов и сетевых узлов.",
@@ -35,6 +80,10 @@ next_node_id = 1
 
 @app.get("/nodes", response_model=list[Node])
 def list_nodes():
+    logger.info(
+        "nodes.listed",
+        extra={"count": len(nodes)},
+    )
     return list(nodes.values())
 
 
@@ -55,6 +104,16 @@ def create_node(node_data: NodeCreate):
     nodes_created_total.inc()
     next_node_id += 1
 
+    logger.info(
+        "node.created",
+        extra={
+            "node_id": node.id,
+            "name": node.name,
+            "host": node.host,
+            "port": node.port,
+        },
+    )
+
     return node
 
 
@@ -63,10 +122,19 @@ def get_node(node_id: int):
     node = nodes.get(node_id)
 
     if node is None:
+        logger.warning(
+            "node.not_found",
+            extra={"node_id": node_id},
+        )
         raise HTTPException(
             status_code=404,
             detail=f"Node with id {node_id} not found",
         )
+
+    logger.info(
+        "node.retrieved",
+        extra={"node_id": node_id},
+    )
 
     return node
 
@@ -76,6 +144,10 @@ def update_node(node_id: int, node_data: NodeUpdate):
     node = nodes.get(node_id)
 
     if node is None:
+        logger.warning(
+            "node.not_found",
+            extra={"node_id": node_id},
+        )
         raise HTTPException(
             status_code=404,
             detail=f"Node with id {node_id} not found",
@@ -87,12 +159,26 @@ def update_node(node_id: int, node_data: NodeUpdate):
     updated_node = Node(**updated_data)
     nodes[node_id] = updated_node
 
+    logger.info(
+        "node.updated",
+        extra={
+            "node_id": node_id,
+            "name": updated_node.name,
+            "host": updated_node.host,
+            "port": updated_node.port,
+        },
+    )
+
     return updated_node
 
 
 @app.delete("/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_node(node_id: int):
     if node_id not in nodes:
+        logger.warning(
+            "node.not_found",
+            extra={"node_id": node_id},
+        )
         raise HTTPException(
             status_code=404,
             detail=f"Node with id {node_id} not found",
@@ -100,6 +186,11 @@ def delete_node(node_id: int):
 
     del nodes[node_id]
     nodes_deleted_total.inc()
+
+    logger.info(
+        "node.deleted",
+        extra={"node_id": node_id},
+    )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -109,6 +200,10 @@ def get_node_status(node_id: int):
     node = nodes.get(node_id)
 
     if node is None:
+        logger.warning(
+            "node.not_found",
+            extra={"node_id": node_id},
+        )
         raise HTTPException(
             status_code=404,
             detail=f"Node with id {node_id} not found",
@@ -132,11 +227,19 @@ def get_node_status(node_id: int):
         else None
     )
 
+    logger.info(
+        "node.status_checked",
+        extra={
+            "node_id": node_id,
+        },
+    )
+
     return NodeStatus(
         node_id=node.id,
         status=node_status,
         response_time_ms=response_time_ms,
     )
+
 
 @app.get("/metrics")
 def metrics():
@@ -145,12 +248,24 @@ def metrics():
         media_type=CONTENT_TYPE_LATEST,
     )
 
+
 @app.get("/health", response_model=HealthResponse)
 def health():
+    logger.info("health.checked")
     return HealthResponse(status="ok")
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.warning(
+        "http.error",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": exc.status_code,
+        },
+    )
+
     if exc.status_code == 404:
         return JSONResponse(
             status_code=404,
@@ -168,13 +283,28 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         },
     )
 
+
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     started_at = time.perf_counter()
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration = (time.perf_counter() - started_at) * 1000
 
-    duration = time.perf_counter() - started_at
+        logger.exception(
+            "http.request_failed",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "duration_ms": round(duration, 2),
+            },
+        )
+
+        raise
+
+    duration = (time.perf_counter() - started_at) * 1000
 
     route = request.scope.get("route")
     path = route.path if route else request.url.path
@@ -188,6 +318,16 @@ async def metrics_middleware(request: Request, call_next):
     http_request_duration_seconds.labels(
         method=request.method,
         path=path,
-    ).observe(duration)
+    ).observe(duration / 1000)
+
+    logger.info(
+        "http.request",
+        extra={
+            "method": request.method,
+            "path": path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration, 2),
+        },
+    )
 
     return response
