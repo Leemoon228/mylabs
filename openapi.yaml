@@ -1,0 +1,315 @@
+openapi: 3.1.0
+
+info:
+  title: Server Monitoring API
+  description: API сервиса мониторинга серверов и сетевых узлов.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000
+    description: Локальный сервер
+
+tags:
+  - name: nodes
+    description: Управление отслеживаемыми узлами
+  - name: status
+    description: Проверка состояния узлов
+  - name: health
+    description: Состояние самого сервиса
+
+paths:
+  /nodes:
+    get:
+      tags:
+        - nodes
+      summary: Получить список узлов
+      operationId: listNodes
+      responses:
+        "200":
+          description: Список мониторируемых узлов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+
+    post:
+      tags:
+        - nodes
+      summary: Добавить узел
+      operationId: createNode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCreate"
+      responses:
+        "201":
+          description: Узел успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /nodes/{node_id}:
+    parameters:
+      - $ref: "#/components/parameters/NodeId"
+
+    get:
+      tags:
+        - nodes
+      summary: Получить узел
+      operationId: getNode
+      responses:
+        "200":
+          description: Узел найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags:
+        - nodes
+      summary: Обновить узел
+      operationId: updateNode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeUpdate"
+      responses:
+        "200":
+          description: Узел обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags:
+        - nodes
+      summary: Удалить узел
+      operationId: deleteNode
+      responses:
+        "204":
+          description: Узел удалён
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /nodes/{node_id}/status:
+    get:
+      tags:
+        - status
+      summary: Проверить состояние узла
+      operationId: getNodeStatus
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+      responses:
+        "200":
+          description: Результат проверки узла
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /health:
+    get:
+      tags:
+        - health
+      summary: Проверить состояние сервиса
+      operationId: getHealth
+      responses:
+        "200":
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+components:
+  parameters:
+    NodeId:
+      name: node_id
+      in: path
+      required: true
+      description: Уникальный идентификатор узла
+      schema:
+        type: integer
+        minimum: 1
+      example: 1
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    NotFound:
+      description: Узел не найден
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Node:
+      type: object
+      required:
+        - id
+        - name
+        - host
+        - port
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: Уникальный идентификатор узла
+          example: 1
+
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Название узла
+          example: "Main server"
+
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: IP-адрес или доменное имя узла
+          example: "192.168.1.10"
+
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: TCP-порт для проверки
+          example: 443
+
+        description:
+          type: string
+          maxLength: 500
+          description: Дополнительное описание узла
+          example: "Основной веб-сервер"
+
+    NodeCreate:
+      type: object
+      required:
+        - name
+        - host
+        - port
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Main server"
+
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "192.168.1.10"
+
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          example: 443
+
+        description:
+          type: string
+          maxLength: 500
+          example: "Основной веб-сервер"
+
+    NodeUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Updated server"
+
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: "192.168.1.20"
+
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          example: 8080
+
+        description:
+          type: string
+          maxLength: 500
+          example: "Обновлённое описание"
+
+    NodeStatus:
+      type: object
+      required:
+        - node_id
+        - status
+      properties:
+        node_id:
+          type: integer
+          example: 1
+
+        status:
+          type: string
+          enum:
+            - up
+            - down
+          example: up
+
+        response_time_ms:
+          type: number
+          format: float
+          minimum: 0
+          description: Время ответа в миллисекундах
+          example: 24.7
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+          example: ok
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: NOT_FOUND
+
+        message:
+          type: string
+          example: "Node with id 1 not found"
