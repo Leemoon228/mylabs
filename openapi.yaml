@@ -52,8 +52,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Node"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /nodes/{node_id}:
     parameters:
@@ -73,6 +73,8 @@ paths:
                 $ref: "#/components/schemas/Node"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     put:
       tags:
@@ -92,8 +94,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Node"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -107,6 +109,8 @@ paths:
           description: Узел удалён
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /nodes/{node_id}/status:
     get:
@@ -125,6 +129,8 @@ paths:
                 $ref: "#/components/schemas/NodeStatus"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /health:
     get:
@@ -139,6 +145,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+
+  /metrics:
+    get:
+      tags:
+        - health
+      summary: Получить метрики Prometheus
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Метрики в формате Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
 
 components:
   parameters:
@@ -159,6 +179,20 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+
+    ValidationError:
+      description: Ошибка валидации входных данных
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - detail
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
 
     NotFound:
       description: Узел не найден

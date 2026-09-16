@@ -4,14 +4,15 @@ services:
     container_name: isrpo-api
     ports:
       - "127.0.0.1:8000:8000"
+
   prometheus:
     image: prom/prometheus:latest
     container_name: isrpo-prometheus
     ports:
       - "9090:9090"
     volumes:
-    - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    - prometheus-data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
 
   grafana:
     image: grafana/grafana:latest
@@ -20,6 +21,36 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+  loki:
+    image: grafana/loki:3.7.0
+    container_name: isrpo-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    command:
+      - -config.file=/etc/loki/loki-config.yaml
+
+  alloy:
+    image: grafana/alloy:v1.18.0
+    container_name: isrpo-alloy
+    ports:
+      - "12345:12345"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+
 volumes:
   grafana-data:
   prometheus-data:
+  loki-data:
+  alloy-data:
