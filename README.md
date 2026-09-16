@@ -26,3 +26,7 @@ Workflow делает
 * API тесты через `curl`
 * сборку Docker образа без публикации
 * запуск всей Docker инфраструктуры и проверку связности API
+
+workflow триггерится пушем
+
+![jobs](img/lab6/workflows.png)
