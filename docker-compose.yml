@@ -5,6 +5,18 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+    container_name: isrpo-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    volumes:
+      - ./jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+      - ./jaeger/ui-config.json:/etc/jaeger/ui-config.json:ro
+    command:
+      - --config=/etc/jaeger/config.yaml
+
   prometheus:
     image: prom/prometheus:latest
     container_name: isrpo-prometheus
@@ -25,7 +37,7 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   loki:
-    image: grafana/loki:3.7.0
+    image: grafana/loki:latest
     container_name: isrpo-loki
     ports:
       - "3100:3100"
@@ -36,7 +48,7 @@ services:
       - -config.file=/etc/loki/loki-config.yaml
 
   alloy:
-    image: grafana/alloy:v1.18.0
+    image: grafana/alloy:latest
     container_name: isrpo-alloy
     ports:
       - "12345:12345"

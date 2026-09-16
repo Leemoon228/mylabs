@@ -4,8 +4,10 @@ import time
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.logging_config import setup_logging
+from app.tracing import setup_tracing
 from app.models import (
     Error,
     HealthResponse,
@@ -25,6 +27,7 @@ from app.metrics import (
 
 
 logger = setup_logging()
+tracer = setup_tracing()
 
 
 app = FastAPI(
@@ -32,6 +35,9 @@ app = FastAPI(
     description="API сервиса мониторинга серверов и сетевых узлов.",
     version="1.0.0",
 )
+
+
+FastAPIInstrumentor.instrument_app(app)
 
 
 nodes: dict[int, Node] = {}
@@ -58,14 +64,19 @@ def list_nodes():
 def create_node(node_data: NodeCreate):
     global next_node_id
 
-    node = Node(
-        id=next_node_id,
-        **node_data.model_dump(),
-    )
+    with tracer.start_as_current_span("node.create") as span:
+        span.set_attribute("node.name", node_data.name)
+        span.set_attribute("node.host", node_data.host)
+        span.set_attribute("node.port", node_data.port)
 
-    nodes[node.id] = node
-    nodes_created_total.inc()
-    next_node_id += 1
+        node = Node(
+            id=next_node_id,
+            **node_data.model_dump(),
+        )
+
+        nodes[node.id] = node
+        nodes_created_total.inc()
+        next_node_id += 1
 
     logger.info(
         "node.created",
@@ -196,17 +207,24 @@ def get_node_status(node_id: int):
             detail=f"Node with id {node_id} not found",
         )
 
-    started_at = time.perf_counter()
-    node_status_checks_total.inc()
+    with tracer.start_as_current_span("node.status_check") as span:
+        span.set_attribute("node.id", node.id)
+        span.set_attribute("node.host", node.host)
+        span.set_attribute("node.port", node.port)
 
-    try:
-        with socket.create_connection(
-            (node.host, node.port),
-            timeout=2,
-        ):
-            node_status = "up"
-    except OSError:
-        node_status = "down"
+        started_at = time.perf_counter()
+        node_status_checks_total.inc()
+
+        try:
+            with socket.create_connection(
+                (node.host, node.port),
+                timeout=2,
+            ):
+                node_status = "up"
+        except OSError:
+            node_status = "down"
+
+        span.set_attribute("node.status", node_status)
 
     response_time_ms = (
         (time.perf_counter() - started_at) * 1000
