@@ -9,7 +9,6 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from app.logging_config import setup_logging
 from app.tracing import setup_tracing
 from app.models import (
-    Error,
     HealthResponse,
     Node,
     NodeCreate,

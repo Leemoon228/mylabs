@@ -14,3 +14,14 @@
 ## Технологии
 
 Python, FastAPI, Prometheus, Grafana, Loki, Grafana Alloy, OpenTelemetry, Jaeger
+
+## ЛР6: CI
+
+GitHub Actions workflow `.github/workflows/ci.yml` запускается при push в `main`
+
+Workflow делает
+
+* Ruff lint
+* компиляцию пайтон кода
+* API тесты через `curl`
+* сборку образа докера
